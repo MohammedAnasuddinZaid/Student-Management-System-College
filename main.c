@@ -405,8 +405,6 @@ void addStudent(void)
 
     index = studentCount;
 
-    index = studentCount;
-
     /* ---------- roll number ---------- */
     newRoll = 0;
 
