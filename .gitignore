@@ -1,0 +1,5 @@
+# Compiled binaries
+sms
+sms.exe
+*.o
+*.out
