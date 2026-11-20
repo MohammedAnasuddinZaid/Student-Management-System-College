@@ -380,7 +380,8 @@ void printTableLine(void)
 /* ============================================================
    FEATURE 1: ADD STUDENT
    Reads and checks the roll number, name and five marks.
-   The student count is increased only after every input is valid.
+   Values are kept in local variables until every input is valid,
+   and the student count is increased only after that.
    ============================================================ */
 void addStudent(void)
 {
@@ -389,6 +390,8 @@ void addStudent(void)
     int i;
     int s;
     int mark;
+    char newName[NAME_LENGTH];
+    int newMarks[SUBJECTS];
 
     printf("\n----- ADD STUDENT -----\n");
 
@@ -399,6 +402,8 @@ void addStudent(void)
                MAX_STUDENTS);
         return;
     }
+
+    index = studentCount;
 
     index = studentCount;
 
@@ -471,7 +476,7 @@ void addStudent(void)
         break;
     }
 
-    strcpy(names[index], inputLine);
+    strcpy(newName, inputLine);
 
     /* ---------- five subject marks ---------- */
     for (s = 0; s < SUBJECTS; s++)
@@ -495,11 +500,19 @@ void addStudent(void)
             break;
         }
 
-        marks[index][s] = mark;
+        newMarks[s] = mark;
     }
 
     /* ---------- save the student ---------- */
+    index = studentCount;
+    strcpy(names[index], newName);
     rollNumbers[index] = newRoll;
+
+    for (s = 0; s < SUBJECTS; s++)
+    {
+        marks[index][s] = newMarks[s];
+    }
+
     calculateGrade(index);
     studentCount++;
 
