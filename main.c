@@ -5,41 +5,56 @@
  * ============================================================
  *
  *  A simple terminal program written in C.
- *  Student details are stored in ordinary arrays while the
- *  program is running. The records are lost when the program
- *  is closed (this is explained in the README).
  *
- *  Only basic C is used:
- *  - variables, arrays and character arrays
- *  - printf(), scanf(), fgets(), getchar()
+ *  Student details are kept in arrays while the program is
+ *  running. They are not saved after the program is closed.
+ *
+ *  Only basic C is used here:
+ *  - variables and one-dimensional / two-dimensional arrays
+ *  - character arrays for names
+ *  - printf(), fgets(), getchar()
  *  - if / else, switch, for and while loops
  *  - user-defined functions
  *
- *  No pointers, structures, files, dynamic memory or recursion.
+ *  No pointers, structures, files, dynamic memory or recursion
+ *  are used.
  */
 
 #include <stdio.h>
 #include <string.h>
 
 /* ---------- Constants ---------- */
-#define MAX_STUDENTS 50   /* maximum number of students */
-#define NAME_LENGTH 30    /* maximum characters in a name */
-#define SUBJECTS 5        /* number of subjects */
+#define MAX_STUDENTS 50       /* maximum number of students        */
+#define NAME_LENGTH 30        /* 29 characters + null character    */
+#define SUBJECTS 5            /* five subjects                     */
+#define MAX_ROLL 999999999    /* largest roll number accepted      */
+#define INPUT_LENGTH 200      /* size of the input line buffer     */
 
-/* ---------- Global arrays ----------
-   These are shared by all functions, so we do not need
-   pointer parameters anywhere in the program. */
+/* ---------- Global student arrays ----------
+   The arrays are global so that every function can use the
+   same data without passing pointers between functions. */
 int studentCount = 0;
-char names[MAX_STUDENTS][NAME_LENGTH];        /* 50 names, each up to 29 letters */
-int rollNumbers[MAX_STUDENTS];                /* 50 roll numbers */
-int marks[MAX_STUDENTS][SUBJECTS];            /* 50 students x 5 subjects */
-char grades[MAX_STUDENTS][4];                 /* grade text, e.g. "A+" or "F" */
+char names[MAX_STUDENTS][NAME_LENGTH];
+int rollNumbers[MAX_STUDENTS];
+int marks[MAX_STUDENTS][SUBJECTS];
+char grades[MAX_STUDENTS][4];     /* "A+", "A", "B", "C", "D", "F" */
 
-/* ---------- Function declarations (prototypes) ---------- */
+/* ---------- Global input buffer ----------
+   One complete line is read here first. The line is then
+   checked before its value is used. */
+char inputLine[INPUT_LENGTH];
+int inputClosed = 0;              /* becomes 1 when input ends */
+
+/* ---------- Function prototypes ---------- */
 void clearInputBuffer(void);
+int readInputLine(void);
+int readNumber(void);
+void trimSpaces(void);
+int nameHasLetter(void);
 int calculateTotal(int index);
 float calculateAverage(int index);
 void calculateGrade(int index);
+void printTableLine(void);
 void addStudent(void);
 void displayStudents(void);
 void searchStudent(void);
@@ -47,19 +62,20 @@ void sortStudents(void);
 
 /* ============================================================
    MAIN FUNCTION
-   The menu and switch are kept here. All real work is done
-   by the small functions below.
+   This function only shows the menu and calls the right
+   feature function with a switch statement.
    ============================================================ */
 int main(void)
 {
     int choice;
 
-    while (1)
+    printf("\n========================================\n");
+    printf("       STUDENT MANAGEMENT SYSTEM\n");
+    printf("========================================\n");
+
+    while (inputClosed == 0)
     {
-        printf("\n========================================\n");
-        printf("       STUDENT MANAGEMENT SYSTEM\n");
-        printf("========================================\n");
-        printf("1. Add Student\n");
+        printf("\n1. Add Student\n");
         printf("2. Display All Students\n");
         printf("3. Search Student by Roll Number\n");
         printf("4. Sort Students by Total Marks\n");
@@ -67,12 +83,11 @@ int main(void)
         printf("----------------------------------------\n");
         printf("Enter your choice: ");
 
-        /* Read the menu choice and check that it is a number */
-        if (scanf("%d", &choice) != 1)
+        choice = readNumber();
+
+        if (inputClosed == 1)
         {
-            printf("\nInvalid input. Please enter a number from 1 to 5.\n");
-            clearInputBuffer();
-            continue;
+            break;
         }
 
         switch (choice)
@@ -80,29 +95,36 @@ int main(void)
             case 1:
                 addStudent();
                 break;
+
             case 2:
                 displayStudents();
                 break;
+
             case 3:
                 searchStudent();
                 break;
+
             case 4:
                 sortStudents();
                 break;
+
             case 5:
-                printf("\nThank you for using Student Management System.\n");
-                printf("Program exited. Goodbye!\n\n");
+                printf("\nThank you for using the Student Management System.\n");
+                printf("Program exited. Goodbye!\n");
                 return 0;
+
             default:
-                printf("\nInvalid choice! Please enter a number from 1 to 5.\n");
+                printf("\nInvalid choice. Please enter a number from 1 to 5.\n");
         }
     }
+
+    printf("\nNo more input. Program closed.\n");
+    return 0;
 }
 
 /* ============================================================
-   Clears characters left in the input buffer.
-   This is needed after scanf() so that fgets() does not read
-   the leftover Enter (newline) key.
+   Removes the characters that are still waiting in the input
+   buffer. This is used when a line is longer than the buffer.
    ============================================================ */
 void clearInputBuffer(void)
 {
@@ -110,12 +132,176 @@ void clearInputBuffer(void)
 
     while ((ch = getchar()) != '\n' && ch != EOF)
     {
-        /* empty body: we only want to throw the characters away */
+        /* throw the extra characters away */
     }
 }
 
 /* ============================================================
-   Adds the marks of one student and returns the total.
+   Reads one full line into inputLine and removes the newline.
+   Returns 1 on success and 0 when there is no more input.
+   ============================================================ */
+int readInputLine(void)
+{
+    int length;
+
+    if (inputClosed == 1)
+    {
+        return 0;
+    }
+
+    if (fgets(inputLine, INPUT_LENGTH, stdin) == NULL)
+    {
+        inputClosed = 1;
+        return 0;
+    }
+
+    length = (int)strlen(inputLine);
+
+    if (length > 0 && inputLine[length - 1] == '\n')
+    {
+        inputLine[length - 1] = '\0';
+    }
+    else
+    {
+        /* The line was too long, so remove the rest of it. */
+        clearInputBuffer();
+    }
+
+    /* Remove the carriage return if the input came from a
+       Windows text file with CRLF line endings. */
+    length = (int)strlen(inputLine);
+
+    if (length > 0 && inputLine[length - 1] == '\r')
+    {
+        inputLine[length - 1] = '\0';
+    }
+
+    return 1;
+}
+
+/* ============================================================
+   Converts inputLine into a whole number.
+   Returns -1 if the line is empty, has letters, has extra
+   characters or is too large.
+   ============================================================ */
+int readNumber(void)
+{
+    int i = 0;
+    int number = 0;
+    int digits = 0;
+
+    if (readInputLine() == 0)
+    {
+        return -1;
+    }
+
+    /* skip spaces before the number */
+    while (inputLine[i] == ' ' || inputLine[i] == '\t')
+    {
+        i++;
+    }
+
+    /* skip extra leading zeroes, but keep one digit */
+    while (inputLine[i] == '0' &&
+           inputLine[i + 1] >= '0' && inputLine[i + 1] <= '9')
+    {
+        i++;
+    }
+
+    /* read the digits and build the number */
+    while (inputLine[i] >= '0' && inputLine[i] <= '9')
+    {
+        if (number > MAX_ROLL / 10)
+        {
+            return -1;       /* the number is too large */
+        }
+
+        number = number * 10 + (inputLine[i] - '0');
+        digits++;
+        i++;
+    }
+
+    if (digits == 0)
+    {
+        return -1;           /* there was no number at all */
+    }
+
+    if (number > MAX_ROLL)
+    {
+        return -1;
+    }
+
+    /* only spaces or tabs may follow the number */
+    while (inputLine[i] == ' ' || inputLine[i] == '\t')
+    {
+        i++;
+    }
+
+    if (inputLine[i] != '\0')
+    {
+        return -1;           /* something like 12abc was entered */
+    }
+
+    return number;
+}
+
+/* ============================================================
+   Removes spaces and tabs from the beginning and the end of
+   inputLine. Spaces inside the name are kept.
+   ============================================================ */
+void trimSpaces(void)
+{
+    int start = 0;
+    int end;
+    int i;
+
+    while (inputLine[start] == ' ' || inputLine[start] == '\t')
+    {
+        start++;
+    }
+
+    end = (int)strlen(inputLine) - 1;
+
+    while (end >= start &&
+          (inputLine[end] == ' ' || inputLine[end] == '\t'))
+    {
+        end--;
+    }
+
+    for (i = 0; start + i <= end; i++)
+    {
+        inputLine[i] = inputLine[start + i];
+    }
+
+    inputLine[i] = '\0';
+}
+
+/* ============================================================
+   Checks that a name has at least one letter. This stops
+   inputs such as "12345" from being accepted as a name.
+   ============================================================ */
+int nameHasLetter(void)
+{
+    int i;
+    char ch;
+
+    for (i = 0; inputLine[i] != '\0'; i++)
+    {
+        ch = inputLine[i];
+
+        if ((ch >= 'A' && ch <= 'Z') ||
+            (ch >= 'a' && ch <= 'z') ||
+            (unsigned char)ch >= 128)
+        {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+/* ============================================================
+   Adds the five marks of one student and returns the total.
    ============================================================ */
 int calculateTotal(int index)
 {
@@ -126,21 +312,24 @@ int calculateTotal(int index)
     {
         total = total + marks[index][i];
     }
+
     return total;
 }
 
 /* ============================================================
    Returns the average marks of one student.
-   5.0f is used so that the answer is a decimal number.
+   5.0f keeps the decimal part of the answer. The (float) cast
+   shows clearly that the total is converted to a floating-point
+   value before the division.
    ============================================================ */
 float calculateAverage(int index)
 {
-    return calculateTotal(index) / 5.0f;
+    return (float)calculateTotal(index) / 5.0f;
 }
 
 /* ============================================================
    Finds the grade from the average and stores it in the
-   global grades array for that student.
+   grades array.
    ============================================================ */
 void calculateGrade(int index)
 {
@@ -173,107 +362,152 @@ void calculateGrade(int index)
 }
 
 /* ============================================================
+   Prints one separator line for the student table.
+   The table is 79 characters wide.
+   ============================================================ */
+void printTableLine(void)
+{
+    int i;
+
+    for (i = 0; i < 79; i++)
+    {
+        printf("-");
+    }
+
+    printf("\n");
+}
+
+/* ============================================================
    FEATURE 1: ADD STUDENT
-   Checks capacity, duplicate roll number and marks range.
+   Reads and checks the roll number, name and five marks.
+   The student count is increased only after every input is valid.
    ============================================================ */
 void addStudent(void)
 {
+    int index;
     int newRoll;
-    int i, s, mark;
-    int length;
+    int i;
+    int s;
+    int mark;
 
     printf("\n----- ADD STUDENT -----\n");
 
-    /* Check whether the arrays are full */
+    /* stop before the arrays become full */
     if (studentCount >= MAX_STUDENTS)
     {
-        printf("Cannot add more students. Maximum capacity (%d) reached.\n",
+        printf("The list is full. You cannot add more than %d students.\n",
                MAX_STUDENTS);
         return;
     }
 
-    /* Read and check the roll number */
-    printf("Enter roll number: ");
-    if (scanf("%d", &newRoll) != 1)
-    {
-        printf("Invalid roll number. Student not added.\n");
-        clearInputBuffer();
-        return;
-    }
+    index = studentCount;
 
-    if (newRoll <= 0)
-    {
-        printf("Roll number must be a positive number. Student not added.\n");
-        clearInputBuffer();
-        return;
-    }
+    /* ---------- roll number ---------- */
+    newRoll = 0;
 
-    /* Linear search for a duplicate roll number */
-    for (i = 0; i < studentCount; i++)
+    while (newRoll == 0)
     {
-        if (rollNumbers[i] == newRoll)
+        printf("Enter roll number (1 to %d): ", MAX_ROLL);
+        newRoll = readNumber();
+
+        if (inputClosed == 1)
         {
-            printf("Roll number %d already exists. Duplicate not allowed.\n",
-                   newRoll);
-            clearInputBuffer();
             return;
+        }
+
+        if (newRoll < 1 || newRoll > MAX_ROLL)
+        {
+            printf("Invalid roll number. Enter a whole number from 1 to %d.\n",
+                   MAX_ROLL);
+            newRoll = 0;
+            continue;
+        }
+
+        /* linear search for a duplicate roll number */
+        for (i = 0; i < studentCount; i++)
+        {
+            if (rollNumbers[i] == newRoll)
+            {
+                printf("Roll number %d is already used. Try another number.\n",
+                       newRoll);
+                newRoll = 0;
+                break;
+            }
         }
     }
 
-    /* Read the name (fgets allows names with spaces) */
-    printf("Enter student name: ");
-    clearInputBuffer();
-    if (fgets(names[studentCount], NAME_LENGTH, stdin) == NULL)
+    /* ---------- name ---------- */
+    while (1)
     {
-        printf("Could not read the name. Student not added.\n");
-        return;
+        printf("Enter student name (up to %d characters): ",
+               NAME_LENGTH - 1);
+
+        if (readInputLine() == 0)
+        {
+            return;
+        }
+
+        trimSpaces();
+
+        if (inputLine[0] == '\0')
+        {
+            printf("Name cannot be empty. Try again.\n");
+            continue;
+        }
+
+        if ((int)strlen(inputLine) > NAME_LENGTH - 1)
+        {
+            printf("Name is too long. Maximum %d characters allowed.\n",
+                   NAME_LENGTH - 1);
+            continue;
+        }
+
+        if (nameHasLetter() == 0)
+        {
+            printf("Name must contain at least one letter. Try again.\n");
+            continue;
+        }
+
+        break;
     }
 
-    length = (int)strlen(names[studentCount]);
-    if (length > 0 && names[studentCount][length - 1] == '\n')
-    {
-        names[studentCount][length - 1] = '\0';  /* remove Enter key */
-        length--;
-    }
-    else
-    {
-        clearInputBuffer();  /* name was longer than the array */
-    }
+    strcpy(names[index], inputLine);
 
-    if (length == 0)
-    {
-        printf("Name cannot be empty. Student not added.\n");
-        return;
-    }
-
-    /* Read five marks. Each mark must be from 0 to 100. */
+    /* ---------- five subject marks ---------- */
     for (s = 0; s < SUBJECTS; s++)
     {
-        do
+        while (1)
         {
-            printf("Enter marks for subject %d (0-100): ", s + 1);
+            printf("Enter marks for subject %d (0 to 100): ", s + 1);
+            mark = readNumber();
 
-            if (scanf("%d", &mark) != 1)
+            if (inputClosed == 1)
             {
-                printf("Please enter a number.\n");
-                clearInputBuffer();
-                mark = -1;
+                return;
             }
-            else if (mark < 0 || mark > 100)
-            {
-                printf("Marks must be between 0 and 100. Try again.\n");
-            }
-        } while (mark < 0 || mark > 100);
 
-        marks[studentCount][s] = mark;
+            if (mark < 0 || mark > 100)
+            {
+                printf("Invalid marks. Enter a whole number from 0 to 100.\n");
+                continue;
+            }
+
+            break;
+        }
+
+        marks[index][s] = mark;
     }
 
-    /* Store the roll number and calculate the grade */
-    rollNumbers[studentCount] = newRoll;
-    calculateGrade(studentCount);
+    /* ---------- save the student ---------- */
+    rollNumbers[index] = newRoll;
+    calculateGrade(index);
     studentCount++;
 
-    printf("\nStudent added successfully. Total students: %d\n", studentCount);
+    printf("\nStudent added successfully.\n");
+    printf("Total students : %d\n", studentCount);
+    printf("Total marks    : %d\n", calculateTotal(index));
+    printf("Average marks  : %.2f\n", calculateAverage(index));
+    printf("Grade          : %s\n", grades[index]);
 }
 
 /* ============================================================
@@ -282,22 +516,24 @@ void addStudent(void)
    ============================================================ */
 void displayStudents(void)
 {
-    int i, s;
+    int i;
+    int s;
     int total;
     float average;
 
+    printf("\n----- ALL STUDENTS -----\n");
+
     if (studentCount == 0)
     {
-        printf("\nNo students registered yet. Please add a student first.\n");
+        printf("No students registered yet. Add a student first.\n");
         return;
     }
 
-    printf("\n----- ALL STUDENTS -----\n");
-    printf("----------------------------------------------------------------------------------------\n");
-    printf("%-8s %-30s %6s %6s %6s %6s %6s %8s %9s %6s\n",
+    printTableLine();
+    printf("%-9s %-29s %3s %3s %3s %3s %3s %5s %7s %-5s\n",
            "Roll", "Name", "M1", "M2", "M3", "M4", "M5",
            "Total", "Average", "Grade");
-    printf("----------------------------------------------------------------------------------------\n");
+    printTableLine();
 
     for (i = 0; i < studentCount; i++)
     {
@@ -305,41 +541,59 @@ void displayStudents(void)
         total = calculateTotal(i);
         average = calculateAverage(i);
 
-        printf("%-8d %-30s", rollNumbers[i], names[i]);
+        printf("%-9d %-29s", rollNumbers[i], names[i]);
+
         for (s = 0; s < SUBJECTS; s++)
         {
-            printf(" %6d", marks[i][s]);
+            printf(" %3d", marks[i][s]);
         }
-        printf(" %8d %9.2f %6s\n", total, average, grades[i]);
+
+        printf(" %5d %7.2f %-5s\n", total, average, grades[i]);
     }
-    printf("----------------------------------------------------------------------------------------\n");
+
+    printTableLine();
     printf("Total students: %d\n", studentCount);
 }
 
 /* ============================================================
    FEATURE 4: SEARCH STUDENT BY ROLL NUMBER
-   Uses a simple linear search.
+   Uses a simple linear search from the first student.
    ============================================================ */
 void searchStudent(void)
 {
     int target;
-    int i, s;
+    int i;
+    int s;
     int found = 0;
     int total;
     float average;
 
+    printf("\n----- SEARCH STUDENT -----\n");
+
     if (studentCount == 0)
     {
-        printf("\nNo students registered yet. Please add a student first.\n");
+        printf("No students registered yet. Add a student first.\n");
         return;
     }
 
-    printf("\nEnter roll number to search: ");
-    if (scanf("%d", &target) != 1)
+    while (1)
     {
-        printf("Invalid roll number.\n");
-        clearInputBuffer();
-        return;
+        printf("Enter roll number to search: ");
+        target = readNumber();
+
+        if (inputClosed == 1)
+        {
+            return;
+        }
+
+        if (target < 1 || target > MAX_ROLL)
+        {
+            printf("Invalid roll number. Enter a whole number from 1 to %d.\n",
+                   MAX_ROLL);
+            continue;
+        }
+
+        break;
     }
 
     for (i = 0; i < studentCount; i++)
@@ -352,17 +606,18 @@ void searchStudent(void)
             average = calculateAverage(i);
 
             printf("\n----- STUDENT FOUND -----\n");
-            printf("Name       : %s\n", names[i]);
-            printf("Roll Number: %d\n", rollNumbers[i]);
-            printf("Marks      : ");
+            printf("Name        : %s\n", names[i]);
+            printf("Roll Number : %d\n", rollNumbers[i]);
+
             for (s = 0; s < SUBJECTS; s++)
             {
-                printf("%d  ", marks[i][s]);
+                printf("Subject %d   : %d\n", s + 1, marks[i][s]);
             }
-            printf("\nTotal      : %d\n", total);
-            printf("Average    : %.2f\n", average);
-            printf("Grade      : %s\n", grades[i]);
-            break;  /* stop searching after the first match */
+
+            printf("Total       : %d\n", total);
+            printf("Average     : %.2f\n", average);
+            printf("Grade       : %s\n", grades[i]);
+            break;
         }
     }
 
@@ -374,20 +629,30 @@ void searchStudent(void)
 
 /* ============================================================
    FEATURE 5: SORT STUDENTS BY TOTAL MARKS
-   Simple bubble sort in descending order. Every array is
-   swapped together so all details of a student stay together.
+   Simple bubble sort in descending order. The name, roll
+   number, all five marks and the grade move together.
    ============================================================ */
 void sortStudents(void)
 {
-    int i, j, s;
-    int tempNumber;
+    int i;
+    int j;
+    int s;
+    int tempRoll;
     int tempMark;
     char tempName[NAME_LENGTH];
     char tempGrade[4];
 
+    printf("\n----- SORT BY TOTAL MARKS -----\n");
+
     if (studentCount == 0)
     {
-        printf("\nNo students registered yet. Nothing to sort.\n");
+        printf("No students registered yet. Nothing to sort.\n");
+        return;
+    }
+
+    if (studentCount == 1)
+    {
+        printf("Only one student is registered, so the list is already sorted.\n");
         return;
     }
 
@@ -397,17 +662,17 @@ void sortStudents(void)
         {
             if (calculateTotal(j) < calculateTotal(j + 1))
             {
-                /* Swap names */
+                /* swap names */
                 strcpy(tempName, names[j]);
                 strcpy(names[j], names[j + 1]);
                 strcpy(names[j + 1], tempName);
 
-                /* Swap roll numbers */
-                tempNumber = rollNumbers[j];
+                /* swap roll numbers */
+                tempRoll = rollNumbers[j];
                 rollNumbers[j] = rollNumbers[j + 1];
-                rollNumbers[j + 1] = tempNumber;
+                rollNumbers[j + 1] = tempRoll;
 
-                /* Swap all five marks */
+                /* swap all five marks */
                 for (s = 0; s < SUBJECTS; s++)
                 {
                     tempMark = marks[j][s];
@@ -415,7 +680,7 @@ void sortStudents(void)
                     marks[j + 1][s] = tempMark;
                 }
 
-                /* Swap grades */
+                /* swap grades */
                 strcpy(tempGrade, grades[j]);
                 strcpy(grades[j], grades[j + 1]);
                 strcpy(grades[j + 1], tempGrade);
@@ -423,6 +688,6 @@ void sortStudents(void)
         }
     }
 
-    printf("\nStudents sorted by total marks (highest first).\n");
-    printf("Use option 2 to view the sorted list.\n");
+    printf("Students sorted by total marks. Highest total is first.\n");
+    displayStudents();
 }
